@@ -27,3 +27,15 @@ test('signed portal fields export alongside independent device observations',()=
  assert.match(resources.find(r=>r.resourceType==='DiagnosticReport').conclusion,/CIED technician insights: Demo source reviewed/);
  assert.equal(resources.find(r=>r.id.endsWith('-burden')).valueQuantity.value,0.3);
 });
+import {extractForm} from './extract.mjs';
+import {reportFields} from './portal.mjs';
+test('report prefill reads vendor PDF bytes and retains independent human entries',()=>{
+ const c=makeCase(212,'Biotronik','routine');
+ c.current.attachment=btoa(pdf(['Synthetic vendor report','Projected longevity: 19 months','AT/AF burden: 4.6 %']));
+ const extraction=extractForm(c.current.attachment);
+ assert.equal(extraction.values.life,'19');assert.equal(extraction.values.burden,'4.6');
+ assert.equal(extraction.evidence.life[0].page,1);
+ assert.equal(reportFields(c).summary,'');assert.equal(reportFields(c).rhythm,'');
+ c.portal={life:'18'};assert.equal(reportFields(c).life,'18');assert.equal(extraction.values.life,'19');
+ assert.deepEqual(extractForm('broken').values,{});
+});
