@@ -7,12 +7,21 @@ export const labels = {
   transmission:'Transmission reason', life:'Battery life', unit:'Battery life unit',
   summary:'Report summary', insights:'CIED technician insights', rhythm:'Underlying rhythm',
   programming:'Reprogramming performed', burden:'AT/AF burden (%)', since:'Burden since',
-  vt:'VT/VF episodes', longest:'Longest AT/AF episode', urgency:'Notification urgency'
+  vt:'VT/VF episodes', longest:'Longest AT/AF episode', urgency:'Notification urgency', recommendation:'Recommendation'
 };
 export function formDefaults(c) {
-  return {...Object.fromEntries(Object.keys(labels).map(k=>[k,''])),urgency:'Unassigned',...extractForm(c.current.attachment).values};
+  const extraction=extractForm(c.current.attachment);
+  const prior=extractForm(c.prior?.attachment).values.burden;
+  const current=extraction.values.burden;
+  const insights=current!==undefined&&prior!==undefined
+    ? 'Reported AT/AF burden '+(current===prior?'remains at '+current+'%.':'changed from '+prior+'% to '+current+'%.')
+    : '';
+  const recommendation=insights
+    ? (current===prior?'Confirm the reported burden against the episode history.':'Review the change in burden alongside the episode history and patient notes.')+' Record whether clinician follow-up is needed.'
+    : '';
+  return {...Object.fromEntries(Object.keys(labels).map(k=>[k,''])),urgency:'Unassigned',insights,recommendation,...extraction.values};
 }
-export function reportFields(c) { return {...formDefaults(c),...c.portal}; }
+export function reportFields(c) { return ['Queued','Reviewing'].includes(c.stage) ? {...formDefaults(c),...c.portal} : {...c.portal}; }
 export function formLines(c) {
   if (!c.portal) return [];
   return Object.entries(reportFields(c)).map(([k,v])=>labels[k]+': '+(v||'Not recorded'));
@@ -33,7 +42,7 @@ export function notificationForm(c,locked) {
   const extraction=extractForm(c.current.attachment);
   if(locked&&!c.portal)return '<div class="twopane">'+quickView(c,extraction.source)+'<section class="portalform"><h2>Archived report</h2><p>This report was signed before the structured form was introduced. Its original review note is shown below.</p></section></div>';
   const values=reportFields(c);
-  const long=['summary','insights','rhythm','programming'];
+  const long=['summary','insights','recommendation','rhythm','programming'];
   function control(k){
     const attrs=' name="'+k+'" data-portal="1" '+(locked?'disabled':'');
     const v=escape(values[k]);
@@ -48,10 +57,16 @@ export function notificationForm(c,locked) {
     }
     const proof=extraction.evidence[k]||[];
     const edited=(c.formOverrides||[]).includes(k)||(!locked&&Object.hasOwn(c.portal||{},k));
-    const status=locked&&!c.extraction?'Archived entry':edited?'Reviewer entry':proof.length?(k==='summary'?'Assembled from PDF':'Extracted from PDF'):'Reviewer input';
+    const status=locked&&!c.extraction?'Archived entry':edited?'Reviewer entry':proof.length?(k==='summary'?'Assembled from PDF':'From device'):(['insights','recommendation'].includes(k)&&values[k]?'Rule-based demo draft':'Reviewer input');
     const trace=proof.length&&(!locked||c.extraction)?'<details class="fieldproof"><summary>Source evidence</summary>'+proof.map(p=>'<div>Page '+p.page+' · '+escape(p.label)+' = '+escape(p.text)+'</div>').join('')+'</details>':'';
     return '<div class="mapped"><label class="formlabel">'+labels[k]+input+'</label><small class="origin">'+status+'</small>'+trace+'</div>';
 
   }
-  return '<div class="twopane">'+quickView(c,extraction.source)+'<section class="portalform"><div class="eyebrow">CLINICIAN WORKSPACE</div><h2>CIED report form</h2><p>Fields with source evidence are populated from the vendor PDF. Complete or correct the draft before sign-off.</p><div class="extractbar"><strong>'+Object.keys(extraction.values).length+' fields mapped from the vendor PDF</strong>'+(locked?'':'<button class="link" data-action="extract">Re-extract from source →</button>')+'</div><div class="reportstate">Report status · <strong>'+escape(c.stage)+'</strong></div><div class="formgrid">'+Object.keys(labels).map(control).join('')+'</div></section></div>';
+  const direct=['template','life','unit','burden'].filter(k=>extraction.evidence[k]);
+  const review=['summary','insights','recommendation','urgency'].filter(k=>!locked||Object.hasOwn(values,k));
+  const other=Object.keys(labels).filter(k=>!direct.includes(k)&&!review.includes(k)&&(!locked||Object.hasOwn(values,k)));
+  function section(title,description,keys){
+    return '<section class="reportgroup"><h3>'+title+'</h3><p>'+description+'</p><div class="formgrid">'+keys.map(control).join('')+'</div></section>';
+  }
+  return '<div class="twopane">'+quickView(c,extraction.source)+'<section class="portalform"><div class="eyebrow">CLINICIAN WORKSPACE</div><h2>CIED report form</h2><p>Fields with source evidence are populated from the vendor PDF. Complete or correct the draft before sign-off.</p><div class="extractbar"><strong>'+Object.keys(extraction.values).length+' fields mapped from the vendor PDF</strong>'+(locked?'':'<button class="link" data-action="extract">Re-extract from source →</button>')+'</div><div class="reportstate">Report status · <strong>'+escape(c.stage)+'</strong></div>'+section('Device measurements','Mapped from the incoming report. Expand source evidence to check each value.',direct)+section(locked?'Signed technician review':'Draft for technician review',locked?'Recorded at sign-off.':'The summary uses the source PDF. A demo rule compares current and prior AT/AF burden to suggest an interpretation and a review step. Edit both before signing.',review)+section('Additional report details','Complete from the patient record where available.',other)+'</section></div>';
 }

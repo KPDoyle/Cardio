@@ -39,3 +39,12 @@ test('report prefill reads vendor PDF bytes and retains independent human entrie
  c.portal={life:'18'};assert.equal(reportFields(c).life,'18');assert.equal(extraction.values.life,'19');
  assert.deepEqual(extractForm('broken').values,{});
 });
+test('review draft compares transmissions, preserves overrides and leaves old signed reports intact',()=>{
+ const c=makeCase(123,'Biotronik','burden');
+ assert.match(reportFields(c).insights,/0.3% to 8.2%/);
+ assert.match(reportFields(c).recommendation,/change in burden/);
+ c.portal={insights:'Technician interpretation'};
+ assert.equal(reportFields(c).insights,c.portal.insights);
+ c.stage='Signed';
+ assert.deepEqual(reportFields(c),c.portal);
+});
