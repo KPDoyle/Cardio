@@ -20,3 +20,10 @@ for(const vendor of vendors){
  });
 }
 test('long reports paginate',()=>assert.match(pdf(Array(120).fill('Test report')),/\/Count 3/));
+test('signed portal fields export alongside independent device observations',()=>{
+ const c=makeCase(201,'Biotronik','routine');
+ c.portal={insights:'Demo source reviewed',urgency:'Normal',burden:'0.4'};
+ const resources=bundle(c).entry.map(x=>x.resource);
+ assert.match(resources.find(r=>r.resourceType==='DiagnosticReport').conclusion,/CIED technician insights: Demo source reviewed/);
+ assert.equal(resources.find(r=>r.id.endsWith('-burden')).valueQuantity.value,0.3);
+});
